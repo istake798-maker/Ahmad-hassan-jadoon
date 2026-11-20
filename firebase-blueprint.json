@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "ClientLead": {
+      "title": "ClientLead",
+      "description": "A freelance client lead or active project managed by Jarvis Ultra for Hassan.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "name": { "type": "string", "description": "Client or business name." },
+        "workType": {
+          "type": "string",
+          "enum": ["VIDEO_EDITING", "DESIGNING", "WEBSITE"],
+          "description": "Service category."
+        },
+        "priceUsd": { "type": "integer", "description": "Quoted or agreed price in USD." },
+        "platform": { "type": "string", "description": "Source or contact channel (Google, Instagram, YouTube, WhatsApp, Gmail)." },
+        "contactHandle": { "type": "string", "description": "Phone number, email, or social handle." },
+        "status": {
+          "type": "string",
+          "enum": ["HUNTED", "PITCHED", "IN_DISCUSSION", "AWAITING_APPROVAL", "CLOSED_WON", "COMPLETED"],
+          "description": "Current CRM pipeline status."
+        },
+        "outreachMessage": { "type": "string", "description": "Tailored English pitch drafted for this client." },
+        "lastClientMessage": { "type": "string", "description": "Latest incoming message from the client." },
+        "draftedReply": { "type": "string", "description": "Latest AI-drafted reply in professional English." },
+        "notes": { "type": "string", "description": "Additional project requirements or notes." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (FieldValue.serverTimestamp())." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on last update (FieldValue.serverTimestamp())." }
+      },
+      "required": ["userId", "name", "workType", "priceUsd", "platform", "status", "createdAt", "updatedAt"]
+    },
+    "MemoryItem": {
+      "title": "MemoryItem",
+      "description": "Persistent knowledge, rule, or preference taught by Hassan to Jarvis Ultra.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string", "enum": ["RULE", "PREFERENCE", "CLIENT_NOTE", "SKILL"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "content", "category", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Conversational turn between Hassan and Jarvis Ultra.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "ASSISTANT"] },
+        "text": { "type": "string" },
+        "brainUsed": { "type": "string" },
+        "voiceInput": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "role", "text", "brainUsed", "voiceInput", "createdAt"]
+    },
+    "DailyStat": {
+      "title": "DailyStat",
+      "description": "Daily client hunting quota (max 10/day) and activity report.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "dateKey": { "type": "string" },
+        "huntedCount": { "type": "integer" },
+        "repliesHandled": { "type": "integer" },
+        "dealsClosed": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "dateKey", "huntedCount", "repliesHandled", "dealsClosed", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/ClientLead" },
+      "description": "Per-user freelance client CRM records and deal approval pipeline."
+    },
+    "/users/{userId}/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/MemoryItem" },
+      "description": "Per-user Jarvis Second Brain learned rules and preferences."
+    },
+    "/users/{userId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Per-user persistent chat history with Jarvis Ultra."
+    },
+    "/users/{userId}/dailyStats/{dateKey}": {
+      "schema": { "$ref": "#/entities/DailyStat" },
+      "description": "Per-user daily hunt quota (max 10/day) and operational metrics."
+    }
+  }
+}

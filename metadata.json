@@ -1,0 +1,6 @@
+{
+  "name": "Jarvis Ultra",
+  "description": "Personal AI assistant for Roman Urdu chat, voice commands, client hunting, CRM tracking, and deal closing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

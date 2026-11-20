@@ -1,0 +1,194 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidClientLead(data, userId) {
+      return data.userId is string &&
+             data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+             data.workType in ['VIDEO_EDITING', 'DESIGNING', 'WEBSITE'] &&
+             data.priceUsd is int && data.priceUsd >= 1 && data.priceUsd <= 100000 &&
+             data.platform is string && data.platform.size() >= 1 && data.platform.size() <= 40 &&
+             data.status in ['HUNTED', 'PITCHED', 'IN_DISCUSSION', 'AWAITING_APPROVAL', 'CLOSED_WON', 'COMPLETED'] &&
+             (!('contactHandle' in data) || (data.contactHandle is string && data.contactHandle.size() <= 120)) &&
+             (!('outreachMessage' in data) || (data.outreachMessage is string && data.outreachMessage.size() <= 2000)) &&
+             (!('lastClientMessage' in data) || (data.lastClientMessage is string && data.lastClientMessage.size() <= 2000)) &&
+             (!('draftedReply' in data) || (data.draftedReply is string && data.draftedReply.size() <= 2000)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidMemoryItem(data, userId) {
+      return data.userId is string &&
+             data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 1000 &&
+             data.category in ['RULE', 'PREFERENCE', 'CLIENT_NOTE', 'SKILL'] &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidChatMessage(data, userId) {
+      return data.userId is string &&
+             data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == userId &&
+             data.role in ['USER', 'ASSISTANT'] &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 8000 &&
+             data.brainUsed is string && data.brainUsed.size() <= 60 &&
+             data.voiceInput is bool &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidDailyStat(data, userId, dateKey) {
+      return data.userId is string &&
+             data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == userId &&
+             data.dateKey is string &&
+             data.dateKey.size() == 10 &&
+             data.dateKey == dateKey &&
+             data.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.huntedCount is int && data.huntedCount >= 0 && data.huntedCount <= 10 &&
+             data.repliesHandled is int && data.repliesHandled >= 0 && data.repliesHandled <= 1000 &&
+             data.dealsClosed is int && data.dealsClosed >= 0 && data.dealsClosed <= 1000 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    match /users/{userId} {
+      match /clients/{clientId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(clientId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(clientId) &&
+                         incoming().keys().hasAll(['userId', 'name', 'workType', 'priceUsd', 'platform', 'status', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'name', 'workType', 'priceUsd', 'platform',
+                           'contactHandle', 'status', 'outreachMessage',
+                           'lastClientMessage', 'draftedReply', 'notes',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidClientLead(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(clientId) &&
+                         isValidClientLead(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         existing().status != 'COMPLETED' &&
+                         (
+                           // Action: Update client details / handle incoming message
+                           (
+                             incoming().status != 'CLOSED_WON' &&
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'name', 'workType', 'priceUsd', 'platform', 'contactHandle',
+                               'status', 'outreachMessage', 'lastClientMessage',
+                               'draftedReply', 'notes', 'updatedAt'
+                             ])
+                           ) ||
+                           // Action: Hassan approves deal close (AWAITING_APPROVAL -> CLOSED_WON)
+                           (
+                             existing().status == 'AWAITING_APPROVAL' &&
+                             incoming().status == 'CLOSED_WON' &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'draftedReply', 'notes', 'updatedAt'])
+                           ) ||
+                           // Action: Mark closed deal completed (CLOSED_WON -> COMPLETED)
+                           (
+                             existing().status == 'CLOSED_WON' &&
+                             incoming().status == 'COMPLETED' &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])
+                           )
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(clientId);
+      }
+
+      match /memories/{memoryId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(memoryId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(memoryId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'content', 'category', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'content', 'category', 'createdAt', 'updatedAt']) &&
+                         isValidMemoryItem(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(memoryId) &&
+                         isValidMemoryItem(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'category', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(memoryId);
+      }
+
+      match /messages/{messageId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(messageId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(messageId) &&
+                         incoming().keys().hasAll(['userId', 'role', 'text', 'brainUsed', 'voiceInput', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'role', 'text', 'brainUsed', 'voiceInput', 'createdAt']) &&
+                         isValidChatMessage(incoming(), userId);
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(messageId);
+      }
+
+      match /dailyStats/{dateKey} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(dateKey);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(dateKey) &&
+                         incoming().keys().hasAll(['userId', 'dateKey', 'huntedCount', 'repliesHandled', 'dealsClosed', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'dateKey', 'huntedCount', 'repliesHandled', 'dealsClosed', 'createdAt', 'updatedAt']) &&
+                         isValidDailyStat(incoming(), userId, dateKey);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(dateKey) &&
+                         isValidDailyStat(incoming(), userId, dateKey) &&
+                         incoming().userId == existing().userId &&
+                         incoming().dateKey == existing().dateKey &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['huntedCount', 'repliesHandled', 'dealsClosed', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(dateKey);
+      }
+    }
+  }
+}
